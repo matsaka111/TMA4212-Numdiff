@@ -101,20 +101,32 @@ def compute_H1_error(u_num, x_dofs, exact_sol):
     quad_points = [0.0, 0.5, 1.0]
     weights = [1.0, 4.0, 1.0]
     n_elem = (len(x_dofs) - 1) // 2
+
     for k in range(n_elem):
         iL, iM, iR = 2*k, 2*k+1, 2*k+2
         xL, xR = x_dofs[iL], x_dofs[iR]
         h = xR - xL
         uL, uM, uR = u_num[iL], u_num[iM], u_num[iR]
+
         for xi, w in zip(quad_points, weights):
+            phi = shape_functions_P2(xi)
             dphi = shape_function_derivatives_P2(xi)
             x = reference_to_physical(xi, xL, xR)
+
+            u_h = uL * phi[0] + uM * phi[1] + uR * phi[2]
             u_h_prime = (1/h) * (uL * dphi[0] + uM * dphi[1] + uR * dphi[2])
+
+            u_exact = exact_sol(x)
             h_eps = 1e-6
             du_exact = (exact_sol(x + h_eps) - exact_sol(x - h_eps)) / (2 * h_eps)
-            err = du_exact - u_h_prime
-            error_sq += w * err**2 * h
+
+            err_val = u_exact - u_h
+            err_grad = du_exact - u_h_prime
+
+            error_sq += w * (err_val**2 + err_grad**2) * h
+
     return np.sqrt(error_sq / 6.0)
+
 
 def plot_convergence(f, exact, Ms, method="uniform"):
     hs = []
