@@ -32,7 +32,7 @@ def assemble_local_element_matrices(a, b, f):
     b_local = np.zeros(3)
     quad_points = [0.0, 0.5, 1.0]
     quad_weights = [1.0, 4.0, 1.0]
-    h = b - a
+    h = b-a
     for xi, w in zip(quad_points, quad_weights):
         phi = shape_functions_P2(xi)
         dphi = shape_function_derivatives_P2(xi)
