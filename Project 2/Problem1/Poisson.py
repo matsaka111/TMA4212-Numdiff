@@ -2,15 +2,22 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def create_partition(a, b, M, method="uniform"):
+    if isinstance(method, (list, np.ndarray)):
+        nodes = np.array(method)
+        if nodes[0] != a or nodes[-1] != b:
+            raise ValueError("Custom mesh must start at a and end at b.")
+        if not np.all(np.diff(nodes) > 0):
+            raise ValueError("Mesh nodes must be strictly increasing.")
+        return nodes
+
     if method == "uniform":
         return np.linspace(a, b, M + 1)
+
     elif method == "squared":
-        return np.linspace(a, b, M + 1) ** 2
-    elif method == "random":
-        interior = np.sort(np.random.rand(M - 1))
-        return np.concatenate(([a], interior, [b]))
+        return np.linspace(a, b, M + 1)**2
+
     else:
-        raise ValueError("Unknown method. Choose 'uniform', 'squared', or 'random'.")
+        raise ValueError("Unknown method. Choose 'uniform', 'squared', or provide a list/array of nodes.")
 
 def shape_functions_P2(xi):
     psi0 = 2 * (xi - 0.5) * (xi - 1)
@@ -78,23 +85,49 @@ def solve_poisson_fem(nodes, f):
     x_dofs = np.array(x_dofs)
     return u_full, x_dofs
 
+# def compute_L2_error(u_num, x_dofs, exact_sol):
+#     error_sq = 0.0
+#     quad_points = [0.0, 0.5, 1.0]
+#     weights = [1.0, 4.0, 1.0]
+#     n_elem = (len(x_dofs) - 1) // 2
+#     for k in range(n_elem):
+#         iL, iM, iR = 2*k, 2*k+1, 2*k+2
+#         xL, xR = x_dofs[iL], x_dofs[iR]
+#         h = xR - xL
+#         uL, uM, uR = u_num[iL], u_num[iM], u_num[iR]
+#         for xi, w in zip(quad_points, weights):
+#             phi = shape_functions_P2(xi)
+#             x = reference_to_physical(xi, xL, xR)
+#             u_h = uL * phi[0] + uM * phi[1] + uR * phi[2]
+#             err = exact_sol(x) - u_h
+#             error_sq += w * err**2 * h
+#     return np.sqrt(error_sq / 6.0)
+
 def compute_L2_error(u_num, x_dofs, exact_sol):
+    import numpy as np
+
+    # Gauss–Legendre quadrature (4-point) on to test convergence in H^3
+    quad_points = [0.0694318, 0.3300095, 0.6699905, 0.9305682]
+    weights = [0.1739274, 0.3260726, 0.3260726, 0.1739274]
+
     error_sq = 0.0
-    quad_points = [0.0, 0.5, 1.0]
-    weights = [1.0, 4.0, 1.0]
     n_elem = (len(x_dofs) - 1) // 2
+
     for k in range(n_elem):
-        iL, iM, iR = 2*k, 2*k+1, 2*k+2
+        iL, iM, iR = 2 * k, 2 * k + 1, 2 * k + 2
         xL, xR = x_dofs[iL], x_dofs[iR]
         h = xR - xL
         uL, uM, uR = u_num[iL], u_num[iM], u_num[iR]
+
         for xi, w in zip(quad_points, weights):
             phi = shape_functions_P2(xi)
             x = reference_to_physical(xi, xL, xR)
             u_h = uL * phi[0] + uM * phi[1] + uR * phi[2]
             err = exact_sol(x) - u_h
-            error_sq += w * err**2 * h
-    return np.sqrt(error_sq / 6.0)
+            error_sq += w * err**2 * h  # includes Jacobia
+
+    return np.sqrt(error_sq)
+
 
 def compute_H1_error(u_num, x_dofs, exact_sol):
     error_sq = 0.0
@@ -153,7 +186,7 @@ def plot_convergence(f, exact, Ms, method="uniform"):
     plt.figure(figsize=(8, 5))
     plt.loglog(hs, errors_L2, 'o-', label=f"L2 error",color = "red")
     plt.loglog(hs, errors_H1, 'o-', label=f"H1 error", color = "blue")
-    plt.loglog(hs, hs**4, 'k--', label=f"O(h^4)", color = "red")
+    plt.loglog(hs, hs**3, 'k--', label=f"O(h^3)", color = "red")
     plt.loglog(hs, hs**2, 'k--', label=f"O(h^2)",color = "blue")
     plt.xlabel("h (max element size)")
     plt.ylabel(f"L2 and H1 error")
@@ -166,9 +199,17 @@ def plot_convergence(f, exact, Ms, method="uniform"):
     for i in range(len(rates_H1)):
         print(f"M = {Ms[i]} --> {Ms[i+1]}: rate_H1 = {rates_H1[i]:.2f}, rate_L2 = {rates_L2[i]:.2f}")
 
-def plot(f, exact, M, method="uniform"):
-    nodes = create_partition(0, 1, M, method)
+
+def compute_solution(f, M, method="uniform"):
+    if isinstance(method, (list, np.ndarray)):
+        nodes = np.array(method)
+    else:
+        nodes = create_partition(0, 1, M, method)
     u, x_dofs = solve_poisson_fem(nodes, f)
+    return u, x_dofs, nodes
+
+
+def plot_solution(u, x_dofs, exact, M, method):
     u_exact = np.array([exact(x) for x in x_dofs])
     plt.figure(figsize=(8, 5))
     plt.plot(x_dofs, u_exact, 'b--', label='Exact solution')
@@ -180,11 +221,3 @@ def plot(f, exact, M, method="uniform"):
     plt.legend()
     plt.tight_layout()
     plt.show()
-
-if __name__ == "__main__":
-    exact = lambda x: x**4 * (1 - x)**3
-    f = lambda x: -(4*(3*x**2 * (1-x)**3 -3*x**3* (1-x)**2) - 3*(6*x**5 - 10*x**4 + 4*x**3))
-    M = 9
-    plot(f, exact, M)
-    Ms = [4, 8, 16, 32, 64, 128]
-    plot_convergence(f, exact, Ms)
